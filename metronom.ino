@@ -5,24 +5,29 @@
 #define LED_1 2
 #define LED_2 3
 #define BUZZER 8
-#define SWITCH_SOUND 6
-#define SWITCH_TICK 10
+
+const unsigned long LCD_UPDATE_MS = 50;
+const unsigned long LED_FLASH_MS = 50;
+const unsigned long TONE_DURATION_MS = 45;
+const unsigned long DEBOUNCE_MS = 200;
+
+const int BUTTONS_THRESHOLD_HIGH = 1023;
+const int BUTTONS_THRESHOLD_MID = 505;
+const int BUTTONS_THRESHOLD_RANGE = 15;
 
 LiquidCrystal lcd(12, 11, 5, 4, 9, 7);
 
 int previousInterval = 0;
-int interval = 0; //interval between ticks in ms
+int interval = 0;
 int potVal = 0;
 int bpm = 0;
-unsigned long elapsedLcd = millis();
-unsigned long elapsedInterval = millis();
+unsigned long elapsedLcd = 0;
+unsigned long elapsedInterval = 0;
 unsigned long elapsedTick = 0;
+unsigned long lastButtonChange = 0;
 
-boolean withSound = false;
-int lastButtonStateSound = LOW;
-
-boolean withTick = false;
-int lastButtonStateTick = LOW;
+bool withSound = false;
+bool withTick = false;
 int lastButtonPressed = -1;
 
 int maxCount = 4;
@@ -83,12 +88,10 @@ void setup() {
   lcd.createChar(3, soundOff);
   lcd.noCursor();
   pinMode(POT, INPUT);
-  pinMode(BUTTONS_STATE, INPUT);
+  pinMode(BUTTONS_STATE, INPUT_PULLUP);
   pinMode(LED_1, OUTPUT);
   pinMode(LED_2, OUTPUT);
-  pinMode(SWITCH_SOUND, INPUT);
-  pinMode(SWITCH_TICK, INPUT);
-  //Serial.begin(9600);
+  pinMode(BUZZER, OUTPUT);
 }
 
 void showBPM() {
@@ -101,7 +104,6 @@ void showBPM() {
       lcd.print(" ");
     }
     lcd.print(bpm);
-    //Serial.println(bpm);
   }
   
 }
@@ -132,7 +134,7 @@ void showCount() {
 }
 
 void updateLCD() {
-  if (millis() - elapsedLcd >= 50) {
+  if (millis() - elapsedLcd >= LCD_UPDATE_MS) {
     showBPM();
     showStatus();
     showCount();
@@ -162,16 +164,19 @@ void handleSwitchTick() {
 }
 
 void handleStateButtons() {
+  if (millis() - lastButtonChange < DEBOUNCE_MS) {
+    return;
+  }
+  
   int buttonState = analogRead(BUTTONS_STATE);
-  //Serial.println(buttonState);
   int buttonPressed = -1;
   
-  if (buttonState == 1023) {
-    buttonPressed = 0;
-  } else if (buttonState >= 990 && buttonState <= 1010) {
-    buttonPressed = 1;
-  }else if (buttonState >= 505 && buttonState <= 515) {
+  if (buttonState < BUTTONS_THRESHOLD_MID) {
     buttonPressed = 2;
+  } else if (buttonState < BUTTONS_THRESHOLD_MID + BUTTONS_THRESHOLD_RANGE) {
+    buttonPressed = 1;
+  } else if (buttonState >= BUTTONS_THRESHOLD_HIGH - BUTTONS_THRESHOLD_RANGE) {
+    buttonPressed = 0;
   }
   
   if (buttonPressed == lastButtonPressed) {
@@ -180,10 +185,13 @@ void handleStateButtons() {
   
   if (buttonPressed == 0) {
     handleSwitchTick();
+    lastButtonChange = millis();
   } else if (buttonPressed == 1) {
     handleSwitchSound();
+    lastButtonChange = millis();
   } else if (buttonPressed == 2) {
     handleSwitchCount();
+    lastButtonChange = millis();
   }
   lastButtonPressed = buttonPressed;
   
@@ -205,16 +213,15 @@ void loop() {
   if (millis() - elapsedInterval >= interval) {
     elapsedInterval = millis();
     elapsedTick = elapsedInterval;
-    //Serial.println("Begin " + count);
     if (count == 0) {
       digitalWrite(LED_1, HIGH);
       if(withSound) {
-        tone(8,440,45);
+        tone(BUZZER, 440, TONE_DURATION_MS);
       }
     } else {
       digitalWrite(LED_2, HIGH);
       if(withSound) {
-        tone(8,220,45);
+        tone(BUZZER, 220, TONE_DURATION_MS);
       }
     }
     count++;
@@ -222,9 +229,8 @@ void loop() {
       count = 0;
     }
   }
-  if (millis() - elapsedTick >= 50) {
+  if (millis() - elapsedTick >= LED_FLASH_MS) {
     digitalWrite(LED_1, LOW);
     digitalWrite(LED_2, LOW);
-    //Serial.println("End " + count);
   }
 }
